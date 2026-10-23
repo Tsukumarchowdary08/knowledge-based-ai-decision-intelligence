@@ -1,0 +1,40 @@
+name: Reproduce research experiment
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - experiment.py
+      - requirements.txt
+      - .github/workflows/reproduce.yml
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fetch original UCI dataset
+        run: |
+          python - <<'PY'
+          import io, urllib.request, zipfile, pathlib
+          url='https://archive.ics.uci.edu/static/public/327/phishing+websites.zip'
+          req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})
+          data=urllib.request.urlopen(req,timeout=90).read()
+          archive=zipfile.ZipFile(io.BytesIO(data))
+          names=[n for n in archive.namelist() if n.lower().endswith('.arff') and 'training' in n.lower()]
+          if not names: raise RuntimeError('Training Dataset.arff not found in UCI archive')
+          pathlib.Path('data').mkdir(exist_ok=True)
+          pathlib.Path('data/Training Dataset.arff').write_bytes(archive.read(names[0]))
+          print('Dataset extracted:', names[0])
+          PY
+      - name: Run calibrated policy evaluation
+        run: python experiment.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: research-results
+          path: results/
+          retention-days: 30
